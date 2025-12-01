@@ -58,6 +58,9 @@ awsup deploy myapp.com --website-path ./_site
 # Deploy website
 awsup deploy yourdomain.com --website-path ./build
 
+# Deploy subdomain (requires parent domain already deployed)
+awsup deploy api.yourdomain.com --website-path ./api-docs
+
 # Check status
 awsup status yourdomain.com
 
@@ -70,6 +73,40 @@ awsup cleanup yourdomain.com
 # Advanced: Deploy in phases
 awsup phase1 yourdomain.com    # DNS setup
 awsup phase2 yourdomain.com    # Full deployment
+```
+
+## 🌐 Subdomain Deployment
+
+AWSUP automatically detects subdomains and reuses the parent domain's Route53 hosted zone.
+
+**Requirements:**
+- Parent domain (e.g., `example.com`) must be deployed first
+- Parent domain's Route53 hosted zone must exist in your AWS account
+
+**Example:**
+```bash
+# First, deploy the parent domain
+awsup deploy example.com --website-path ./main-site
+
+# Then deploy subdomains (no NS configuration needed!)
+awsup deploy api.example.com --website-path ./api-docs
+awsup deploy blog.example.com --website-path ./blog
+awsup deploy app.example.com --website-path ./app/build
+```
+
+**Key Differences for Subdomains:**
+- ✅ Uses parent domain's hosted zone (no separate NS records)
+- ✅ SSL certificate for subdomain only (no www subdomain)
+- ✅ CloudFront distribution serves only the subdomain
+- ✅ Faster deployment (no NS propagation wait)
+- ✅ Cost-effective (single hosted zone for all subdomains)
+
+**Multiple Subdomains:**
+```bash
+# Deploy as many subdomains as needed
+awsup deploy staging.example.com --website-path ./staging
+awsup deploy dev.example.com --website-path ./dev
+awsup deploy docs.example.com --website-path ./docs
 ```
 
 ## 🔄 How It Works

@@ -17,38 +17,52 @@ class DeploymentConfig:
     domain: str
     region: str = 'us-east-1'
     environment: str = 'prod'
-    
+
+    # Subdomain Configuration
+    parent_domain: Optional[str] = None  # For subdomains, the parent root domain
+    is_subdomain: bool = False
+
     # S3 Configuration
     enable_versioning: bool = True
     enable_encryption: bool = True
-    
+
     # CloudFront Configuration
     price_class: str = 'PriceClass_All'
     http_version: str = 'http2and3'
     enable_ipv6: bool = True
-    
+
     # Certificate Configuration
     certificate_validation_method: str = 'DNS'
-    
+
     # Timeouts (seconds)
     certificate_validation_timeout: int = 600
     distribution_deployment_timeout: int = 1200
     dns_propagation_check_timeout: int = 600
-    
+
     # Retry Configuration
     max_retries: int = 3
     retry_backoff_factor: float = 2.0
-    
+
     # Tags
     default_tags: Dict[str, str] = None
-    
+
     def __post_init__(self):
+        # Auto-detect subdomain and set parent_domain
+        from .validators import DomainValidator
+
+        if DomainValidator.is_subdomain(self.domain):
+            self.is_subdomain = True
+            if not self.parent_domain:
+                self.parent_domain = DomainValidator.get_parent_domain(self.domain)
+
         if self.default_tags is None:
             self.default_tags = {
                 'ManagedBy': 'AWSWebsiteDeployer',
                 'Environment': self.environment,
                 'Domain': self.domain
             }
+            if self.is_subdomain and self.parent_domain:
+                self.default_tags['ParentDomain'] = self.parent_domain
     
     @classmethod
     def from_file(cls, config_path: str) -> 'DeploymentConfig':

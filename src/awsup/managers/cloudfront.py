@@ -18,6 +18,7 @@ class CloudFrontManager(BaseAWSManager):
         self.client = boto3.client('cloudfront')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
+        self.is_subdomain = config.is_subdomain
     
     def create_or_update_distribution(self, bucket_name: str, cert_arn: str, account_id: str) -> Dict[str, Any]:
         """
@@ -147,8 +148,8 @@ class CloudFrontManager(BaseAWSManager):
                 }
             },
             'Aliases': {
-                'Quantity': 2,
-                'Items': [self.domain, self.www_domain]
+                'Quantity': 1 if self.is_subdomain else 2,
+                'Items': [self.domain] if self.is_subdomain else [self.domain, self.www_domain]
             },
             'ViewerCertificate': {
                 'ACMCertificateArn': cert_arn,

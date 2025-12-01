@@ -64,6 +64,51 @@ class DomainValidator:
         """Normalize domain name"""
         return domain.lower().strip().rstrip('.')
 
+    @classmethod
+    def is_subdomain(cls, domain: str) -> bool:
+        """
+        Check if domain is a subdomain (has more than 2 parts, e.g., api.example.com)
+        Returns: True if subdomain, False if root domain
+        """
+        domain = cls.normalize_domain(domain)
+        parts = domain.split('.')
+
+        # Special handling for common 2-part TLDs like .co.uk, .com.au
+        two_part_tlds = ['co.uk', 'com.au', 'co.in', 'co.za', 'com.br']
+
+        for tld in two_part_tlds:
+            if domain.endswith(tld):
+                # For .co.uk domains: example.co.uk is root, api.example.co.uk is subdomain
+                return len(parts) > 3
+
+        # Standard TLDs: example.com is root, api.example.com is subdomain
+        return len(parts) > 2
+
+    @classmethod
+    def get_parent_domain(cls, subdomain: str) -> Optional[str]:
+        """
+        Extract parent domain from subdomain
+        E.g., 'api.example.com' -> 'example.com'
+        Returns: Parent domain or None if already root domain
+        """
+        subdomain = cls.normalize_domain(subdomain)
+
+        if not cls.is_subdomain(subdomain):
+            return None
+
+        parts = subdomain.split('.')
+
+        # Special handling for common 2-part TLDs
+        two_part_tlds = ['co.uk', 'com.au', 'co.in', 'co.za', 'com.br']
+
+        for tld in two_part_tlds:
+            if subdomain.endswith(tld):
+                # Return the last 3 parts (domain.tld1.tld2)
+                return '.'.join(parts[-3:])
+
+        # Standard TLDs: return last 2 parts (domain.tld)
+        return '.'.join(parts[-2:])
+
 
 class FileValidator:
     """Website file validation"""

@@ -85,14 +85,18 @@ class CompleteProductionDeployer:
             })
             self.state_manager.save_state(self.state)
             
-            # Always display NS records for user verification
-            self._display_ns_records(result['ns_records'])
-            
-            if result['action'] == 'created':
-                console.print("[yellow]⚠️ New hosted zone created - NS records must be configured[/yellow]")
+            # Display NS records for user verification (skip for subdomains using parent zone)
+            if result.get('action') == 'existing_parent':
+                console.print(f"[blue]ℹ️ Using parent domain's hosted zone: {result.get('parent_domain')}[/blue]")
+                console.print("[green]✅ No NS record configuration needed for subdomain[/green]")
             else:
-                console.print("[blue]ℹ️ Existing hosted zone found - verify NS records are configured[/blue]")
-            
+                self._display_ns_records(result['ns_records'])
+
+                if result['action'] == 'created':
+                    console.print("[yellow]⚠️ New hosted zone created - NS records must be configured[/yellow]")
+                else:
+                    console.print("[blue]ℹ️ Existing hosted zone found - verify NS records are configured[/blue]")
+
             return result
             
         except Exception as e:
@@ -173,11 +177,24 @@ class CompleteProductionDeployer:
                 })
                 self.state_manager.save_state(self.state)
                 
+                # Display appropriate success message based on domain type
+                if self.config.is_subdomain:
+                    success_message = (
+                        f"[bold green]🎉 Subdomain Deployment Complete![/bold green]\n\n"
+                        f"Subdomain URL: https://{self.config.domain}\n"
+                        f"Parent Domain: {self.config.parent_domain}\n\n"
+                        f"[dim]CloudFront may take 15-20 minutes to fully deploy globally[/dim]"
+                    )
+                else:
+                    success_message = (
+                        f"[bold green]🎉 Deployment Complete![/bold green]\n\n"
+                        f"Website URL: https://{self.config.domain}\n"
+                        f"WWW URL: https://www.{self.config.domain}\n\n"
+                        f"[dim]CloudFront may take 15-20 minutes to fully deploy globally[/dim]"
+                    )
+
                 console.print(Panel.fit(
-                    f"[bold green]🎉 Deployment Complete![/bold green]\n\n"
-                    f"Website URL: https://{self.config.domain}\n"
-                    f"WWW URL: https://www.{self.config.domain}\n\n"
-                    f"[dim]CloudFront may take 15-20 minutes to fully deploy globally[/dim]",
+                    success_message,
                     border_style="green",
                     title="Success"
                 ))

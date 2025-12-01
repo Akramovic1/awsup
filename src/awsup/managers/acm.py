@@ -18,6 +18,7 @@ class ACMManager(BaseAWSManager):
         self.client = boto3.client('acm', region_name='us-east-1')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
+        self.is_subdomain = config.is_subdomain
     
     def request_or_get_certificate(self, route53_manager) -> str:
         """
@@ -33,12 +34,18 @@ class ACMManager(BaseAWSManager):
                 return existing_cert
             
             # Request new certificate
-            self.logger.info(f"Requesting new ACM certificate for {self.domain} and {self.www_domain}")
-            
+            # For subdomains, only request certificate for the subdomain itself (no www)
+            if self.is_subdomain:
+                self.logger.info(f"Requesting new ACM certificate for subdomain {self.domain}")
+                san_list = [self.domain]
+            else:
+                self.logger.info(f"Requesting new ACM certificate for {self.domain} and {self.www_domain}")
+                san_list = [self.domain, self.www_domain]
+
             def request_cert():
                 return self.client.request_certificate(
                     DomainName=self.domain,
-                    SubjectAlternativeNames=[self.domain, self.www_domain],
+                    SubjectAlternativeNames=san_list,
                     ValidationMethod=self.config.certificate_validation_method,
                     Tags=[
                         {'Key': 'Name', 'Value': self.domain},
@@ -88,13 +95,22 @@ class ACMManager(BaseAWSManager):
                 
                 # Check if certificate covers our domains
                 domains = [cert_info['DomainName']] + cert_info.get('SubjectAlternativeNames', [])
-                
-                if (self.domain in domains and self.www_domain in domains):
-                    matching_certs.append({
-                        'arn': cert['CertificateArn'],
-                        'status': cert_info['Status'],
-                        'domains': domains
-                    })
+
+                # For subdomains, only need subdomain itself; for root domains, need both domain and www
+                if self.is_subdomain:
+                    if self.domain in domains:
+                        matching_certs.append({
+                            'arn': cert['CertificateArn'],
+                            'status': cert_info['Status'],
+                            'domains': domains
+                        })
+                else:
+                    if (self.domain in domains and self.www_domain in domains):
+                        matching_certs.append({
+                            'arn': cert['CertificateArn'],
+                            'status': cert_info['Status'],
+                            'domains': domains
+                        })
             
             if not matching_certs:
                 return None

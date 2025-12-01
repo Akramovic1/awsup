@@ -17,34 +17,64 @@ class Route53Manager(BaseAWSManager):
         self.client = boto3.client('route53')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
+        self.is_subdomain = config.is_subdomain
+        self.parent_domain = config.parent_domain
     
     def create_or_get_hosted_zone(self) -> Dict[str, Any]:
         """
         Create or get existing hosted zone
+        For subdomains, reuses the parent domain's hosted zone
         Returns: Dict with hosted zone info and action taken
         """
         try:
-            # Check for existing hosted zone
+            # For subdomains, look up parent domain's hosted zone
+            if self.is_subdomain and self.parent_domain:
+                self.logger.info(f"Subdomain detected: {self.domain}, looking for parent domain hosted zone: {self.parent_domain}")
+                parent_zone = self.get_hosted_zone_for_domain(self.parent_domain)
+
+                if parent_zone:
+                    self.logger.info(f"Using parent domain's hosted zone: {parent_zone['Id']}")
+
+                    # Clean up conflicting records for subdomain
+                    self.cleanup_conflicting_records(parent_zone['Id'])
+
+                    # Get NS records for parent domain
+                    ns_records = self.get_ns_records_for_domain(parent_zone['Id'], self.parent_domain)
+
+                    return {
+                        'hosted_zone_id': parent_zone['Id'],
+                        'ns_records': ns_records,
+                        'action': 'existing_parent',
+                        'is_subdomain': True,
+                        'parent_domain': self.parent_domain
+                    }
+                else:
+                    raise ValueError(
+                        f"Parent domain '{self.parent_domain}' hosted zone not found. "
+                        f"Please deploy the parent domain first before deploying subdomain '{self.domain}'"
+                    )
+
+            # For root domains, check for existing hosted zone
             existing_zone = self.get_hosted_zone()
-            
+
             if existing_zone:
                 self.logger.info(f"Found existing hosted zone: {existing_zone['Id']}")
-                
+
                 # Clean up conflicting records
                 self.cleanup_conflicting_records(existing_zone['Id'])
-                
+
                 # Get NS records
                 ns_records = self.get_ns_records(existing_zone['Id'])
-                
+
                 return {
                     'hosted_zone_id': existing_zone['Id'],
                     'ns_records': ns_records,
                     'action': 'existing'
                 }
-            
+
             # Create new hosted zone
             self.logger.info(f"Creating new hosted zone for {self.domain}")
-            
+
             def create_zone():
                 return self.client.create_hosted_zone(
                     Name=self.domain,
@@ -54,66 +84,74 @@ class Route53Manager(BaseAWSManager):
                         'PrivateZone': False
                     }
                 )
-            
+
             response = self.retry_with_backoff(create_zone)
-            
+
             hosted_zone_id = response['HostedZone']['Id']
             ns_records = [ns for ns in response['DelegationSet']['NameServers']]
-            
+
             # Add tags
             self.add_tags(hosted_zone_id)
-            
+
             self.logger.info(f"Created hosted zone: {hosted_zone_id}")
-            
+
             return {
                 'hosted_zone_id': hosted_zone_id,
                 'ns_records': ns_records,
                 'action': 'created'
             }
-            
+
         except Exception as e:
             self.logger.error(f"Hosted zone operation failed: {e}")
             raise
     
     def get_hosted_zone(self) -> Optional[Dict]:
         """Get existing hosted zone for the domain"""
+        return self.get_hosted_zone_for_domain(self.domain)
+
+    def get_hosted_zone_for_domain(self, domain: str) -> Optional[Dict]:
+        """Get existing hosted zone for any domain"""
         try:
             def list_zones():
-                return self.client.list_hosted_zones_by_name(DNSName=self.domain)
-            
+                return self.client.list_hosted_zones_by_name(DNSName=domain)
+
             response = self.retry_with_backoff(list_zones)
-            
+
             for zone in response.get('HostedZones', []):
                 zone_name = zone['Name'].rstrip('.')
-                if zone_name == self.domain:
+                if zone_name == domain:
                     return zone
-            
+
             return None
-            
+
         except ClientError as e:
             if e.response['Error']['Code'] == 'NoSuchHostedZone':
                 return None
             raise
     
     def get_ns_records(self, hosted_zone_id: str) -> List[str]:
-        """Get NS records for hosted zone"""
+        """Get NS records for hosted zone (current domain)"""
+        return self.get_ns_records_for_domain(hosted_zone_id, self.domain)
+
+    def get_ns_records_for_domain(self, hosted_zone_id: str, domain: str) -> List[str]:
+        """Get NS records for any domain in hosted zone"""
         try:
             def get_records():
                 return self.client.list_resource_record_sets(
                     HostedZoneId=hosted_zone_id,
                     StartRecordType='NS',
-                    StartRecordName=self.domain
+                    StartRecordName=domain
                 )
-            
+
             response = self.retry_with_backoff(get_records)
-            
+
             for record_set in response['ResourceRecordSets']:
-                if (record_set['Type'] == 'NS' and 
-                    record_set['Name'].rstrip('.') == self.domain):
+                if (record_set['Type'] == 'NS' and
+                    record_set['Name'].rstrip('.') == domain):
                     return [r['Value'] for r in record_set['ResourceRecords']]
-            
+
             return []
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get NS records: {e}")
             raise
@@ -161,42 +199,62 @@ class Route53Manager(BaseAWSManager):
     def create_alias_records(self, cloudfront_domain: str, hosted_zone_id: str):
         """Create A records pointing to CloudFront distribution"""
         try:
-            changes = [
-                {
-                    'Action': 'UPSERT',
-                    'ResourceRecordSet': {
-                        'Name': self.domain,
-                        'Type': 'A',
-                        'AliasTarget': {
-                            'HostedZoneId': 'Z2FDTNDATAQYW2',  # CloudFront hosted zone ID
-                            'DNSName': cloudfront_domain,
-                            'EvaluateTargetHealth': False
+            # For subdomains, only create record for subdomain itself (no www)
+            if self.is_subdomain:
+                changes = [
+                    {
+                        'Action': 'UPSERT',
+                        'ResourceRecordSet': {
+                            'Name': self.domain,
+                            'Type': 'A',
+                            'AliasTarget': {
+                                'HostedZoneId': 'Z2FDTNDATAQYW2',  # CloudFront hosted zone ID
+                                'DNSName': cloudfront_domain,
+                                'EvaluateTargetHealth': False
+                            }
                         }
                     }
-                },
-                {
-                    'Action': 'UPSERT',
-                    'ResourceRecordSet': {
-                        'Name': self.www_domain,
-                        'Type': 'A',
-                        'AliasTarget': {
-                            'HostedZoneId': 'Z2FDTNDATAQYW2',
-                            'DNSName': cloudfront_domain,
-                            'EvaluateTargetHealth': False
+                ]
+                log_msg = f"Created A record for subdomain {self.domain}"
+            else:
+                # For root domains, create both domain and www records
+                changes = [
+                    {
+                        'Action': 'UPSERT',
+                        'ResourceRecordSet': {
+                            'Name': self.domain,
+                            'Type': 'A',
+                            'AliasTarget': {
+                                'HostedZoneId': 'Z2FDTNDATAQYW2',  # CloudFront hosted zone ID
+                                'DNSName': cloudfront_domain,
+                                'EvaluateTargetHealth': False
+                            }
+                        }
+                    },
+                    {
+                        'Action': 'UPSERT',
+                        'ResourceRecordSet': {
+                            'Name': self.www_domain,
+                            'Type': 'A',
+                            'AliasTarget': {
+                                'HostedZoneId': 'Z2FDTNDATAQYW2',
+                                'DNSName': cloudfront_domain,
+                                'EvaluateTargetHealth': False
+                            }
                         }
                     }
-                }
-            ]
-            
+                ]
+                log_msg = f"Created A records for {self.domain} and {self.www_domain}"
+
             def create_records():
                 return self.client.change_resource_record_sets(
                     HostedZoneId=hosted_zone_id,
                     ChangeBatch={'Changes': changes}
                 )
-            
+
             self.retry_with_backoff(create_records)
-            self.logger.info(f"Created A records for {self.domain} and {self.www_domain}")
-            
+            self.logger.info(log_msg)
+
         except Exception as e:
             self.logger.error(f"Failed to create Route53 records: {e}")
             raise
