@@ -3,7 +3,7 @@
 
 set -e  # Exit on error
 
-VERSION="2.1.0"
+VERSION="2.1.1"
 BOLD='\033[1m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

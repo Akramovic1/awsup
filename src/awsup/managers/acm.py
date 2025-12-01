@@ -165,12 +165,20 @@ class ACMManager(BaseAWSManager):
                 # Get hosted zone ID from route53_manager's config or state
                 hosted_zone_id = getattr(route53_manager, 'hosted_zone_id', None)
                 if not hosted_zone_id:
-                    # Try to get from existing hosted zone
-                    existing_zone = route53_manager.get_hosted_zone()
-                    if existing_zone:
-                        hosted_zone_id = existing_zone['Id']
+                    # For subdomains, use parent domain's hosted zone
+                    if self.is_subdomain and self.config.parent_domain:
+                        parent_zone = route53_manager.get_hosted_zone_for_domain(self.config.parent_domain)
+                        if parent_zone:
+                            hosted_zone_id = parent_zone['Id']
+                        else:
+                            raise ValueError(f"Parent domain hosted zone not found: {self.config.parent_domain}")
                     else:
-                        raise ValueError("No hosted zone found for DNS validation")
+                        # For root domains, use current domain's hosted zone
+                        existing_zone = route53_manager.get_hosted_zone()
+                        if existing_zone:
+                            hosted_zone_id = existing_zone['Id']
+                        else:
+                            raise ValueError("No hosted zone found for DNS validation")
                 
                 def create_validation_records():
                     return route53_manager.client.change_resource_record_sets(
