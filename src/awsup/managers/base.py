@@ -12,10 +12,18 @@ logger = logging.getLogger(__name__)
 
 class BaseAWSManager:
     """Base class for AWS service managers"""
-    
+
     def __init__(self, config: DeploymentConfig):
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.session = config.get_boto3_session()
+
+    def get_client(self, service_name: str, region_name: str = None):
+        """Create boto3 client using session with profile"""
+        kwargs = {}
+        if region_name:
+            kwargs['region_name'] = region_name
+        return self.session.client(service_name, **kwargs)
     
     def retry_with_backoff(
         self, 

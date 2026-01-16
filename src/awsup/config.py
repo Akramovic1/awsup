@@ -30,6 +30,7 @@ class DeploymentConfig:
     price_class: str = 'PriceClass_All'
     http_version: str = 'http2and3'
     enable_ipv6: bool = True
+    enable_cache: bool = False
 
     # Certificate Configuration
     certificate_validation_method: str = 'DNS'
@@ -42,6 +43,9 @@ class DeploymentConfig:
     # Retry Configuration
     max_retries: int = 3
     retry_backoff_factor: float = 2.0
+
+    # AWS Profile
+    aws_profile: Optional[str] = None
 
     # Tags
     default_tags: Dict[str, str] = None
@@ -114,69 +118,78 @@ class DeploymentConfig:
         if errors:
             raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
 
+    def get_boto3_session(self) -> boto3.Session:
+        """Get boto3 session with profile if specified"""
+        if self.aws_profile:
+            return boto3.Session(profile_name=self.aws_profile)
+        return boto3.Session()
+
 
 class AWSCredentialValidator:
     """Validates AWS credentials and permissions"""
-    
+
     @staticmethod
-    def validate_credentials() -> bool:
+    def validate_credentials(profile_name: Optional[str] = None) -> bool:
         """Check if AWS credentials are properly configured"""
         try:
-            sts = boto3.client('sts')
+            session = boto3.Session(profile_name=profile_name) if profile_name else boto3.Session()
+            sts = session.client('sts')
             response = sts.get_caller_identity()
             return bool(response.get('Account'))
         except Exception:
             return False
-    
+
     @staticmethod
     def validate_permissions(config: DeploymentConfig) -> Dict[str, bool]:
         """Check required AWS permissions"""
+        session = config.get_boto3_session()
         permissions = {
             'route53': False,
             's3': False,
             'cloudfront': False,
             'acm': False
         }
-        
+
         try:
             # Test Route53 permissions
-            route53 = boto3.client('route53')
+            route53 = session.client('route53')
             route53.list_hosted_zones_by_name(DNSName=config.domain, MaxItems='1')
             permissions['route53'] = True
         except ClientError:
             pass
-        
+
         try:
             # Test S3 permissions
-            s3 = boto3.client('s3', region_name=config.region)
+            s3 = session.client('s3', region_name=config.region)
             s3.list_buckets()
             permissions['s3'] = True
         except ClientError:
             pass
-        
+
         try:
             # Test CloudFront permissions
-            cloudfront = boto3.client('cloudfront')
+            cloudfront = session.client('cloudfront')
             cloudfront.list_distributions(MaxItems='1')
             permissions['cloudfront'] = True
         except ClientError:
             pass
-        
+
         try:
             # Test ACM permissions
-            acm = boto3.client('acm', region_name='us-east-1')
+            acm = session.client('acm', region_name='us-east-1')
             acm.list_certificates(MaxItems=1)
             permissions['acm'] = True
         except ClientError:
             pass
-        
+
         return permissions
-    
+
     @staticmethod
-    def get_account_id() -> Optional[str]:
+    def get_account_id(profile_name: Optional[str] = None) -> Optional[str]:
         """Get AWS account ID"""
         try:
-            sts = boto3.client('sts')
+            session = boto3.Session(profile_name=profile_name) if profile_name else boto3.Session()
+            sts = session.client('sts')
             return sts.get_caller_identity()['Account']
         except Exception:
             return None

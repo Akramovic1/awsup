@@ -3,7 +3,6 @@ S3 Manager for bucket operations
 """
 import os
 import json
-import boto3
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from botocore.exceptions import ClientError
@@ -14,10 +13,10 @@ from ..validators import FileValidator
 
 class S3Manager(BaseAWSManager):
     """Manages S3 bucket operations"""
-    
+
     def __init__(self, config: DeploymentConfig):
         super().__init__(config)
-        self.client = boto3.client('s3', region_name=config.region)
+        self.client = self.get_client('s3', region_name=config.region)
         self.bucket_name = config.domain
     
     def create_or_get_bucket(self) -> str:

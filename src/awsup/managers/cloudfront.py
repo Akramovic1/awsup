@@ -1,8 +1,6 @@
 """
 CloudFront Manager for CDN operations
 """
-import boto3
-import json
 import time
 from typing import Dict, List, Optional, Any
 from botocore.exceptions import ClientError
@@ -12,10 +10,14 @@ from ..config import DeploymentConfig
 
 class CloudFrontManager(BaseAWSManager):
     """Manages CloudFront distributions"""
-    
+
+    # AWS Managed Cache Policy IDs
+    CACHE_POLICY_OPTIMIZED = '658327ea-f89d-4fab-a63d-7e88639e58f6'
+    CACHE_POLICY_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad'
+
     def __init__(self, config: DeploymentConfig):
         super().__init__(config)
-        self.client = boto3.client('cloudfront')
+        self.client = self.get_client('cloudfront')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
         self.is_subdomain = config.is_subdomain
@@ -141,7 +143,7 @@ class CloudFrontManager(BaseAWSManager):
                     }
                 },
                 'Compress': True,
-                'CachePolicyId': '658327ea-f89d-4fab-a63d-7e88639e58f6',  # Managed-CachingOptimized
+                'CachePolicyId': self.CACHE_POLICY_OPTIMIZED if self.config.enable_cache else self.CACHE_POLICY_DISABLED,
                 'TrustedSigners': {
                     'Enabled': False,
                     'Quantity': 0
@@ -290,7 +292,17 @@ class CloudFrontManager(BaseAWSManager):
                 config['IsIPV6Enabled'] = self.config.enable_ipv6
                 updated = True
                 changes.append("updated IPv6 setting")
-            
+
+            # Update cache policy if different
+            current_cache_policy = config['DefaultCacheBehavior'].get('CachePolicyId')
+            expected_cache_policy = self.CACHE_POLICY_OPTIMIZED if self.config.enable_cache else self.CACHE_POLICY_DISABLED
+
+            if current_cache_policy != expected_cache_policy:
+                config['DefaultCacheBehavior']['CachePolicyId'] = expected_cache_policy
+                updated = True
+                cache_status = "enabled" if self.config.enable_cache else "disabled"
+                changes.append(f"updated cache policy (caching {cache_status})")
+
             # Update if changes detected
             if updated:
                 def update_dist():
@@ -468,7 +480,7 @@ class CloudFrontManager(BaseAWSManager):
     def _get_account_id(self) -> str:
         """Get AWS account ID"""
         try:
-            sts = boto3.client('sts')
+            sts = self.session.client('sts')
             return sts.get_caller_identity()['Account']
         except Exception as e:
             self.logger.error(f"Failed to get account ID: {e}")
@@ -505,7 +517,7 @@ class CloudFrontManager(BaseAWSManager):
     def get_distribution_metrics(self, distribution_id: str, start_time, end_time) -> Dict[str, Any]:
         """Get CloudWatch metrics for distribution"""
         try:
-            cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')
+            cloudwatch = self.session.client('cloudwatch', region_name='us-east-1')
             
             metrics = {}
             

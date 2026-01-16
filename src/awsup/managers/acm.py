@@ -1,7 +1,6 @@
 """
 ACM Manager for SSL certificate operations
 """
-import boto3
 import time
 from typing import Dict, List, Optional, Any
 from botocore.exceptions import ClientError
@@ -11,11 +10,11 @@ from ..config import DeploymentConfig
 
 class ACMManager(BaseAWSManager):
     """Manages ACM SSL certificates"""
-    
+
     def __init__(self, config: DeploymentConfig):
         super().__init__(config)
         # ACM must be in us-east-1 for CloudFront
-        self.client = boto3.client('acm', region_name='us-east-1')
+        self.client = self.get_client('acm', region_name='us-east-1')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
         self.is_subdomain = config.is_subdomain

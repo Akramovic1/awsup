@@ -1,7 +1,6 @@
 """
 Route53 Manager for DNS operations
 """
-import boto3
 import time
 from typing import Dict, List, Optional, Tuple, Any
 from botocore.exceptions import ClientError
@@ -11,10 +10,10 @@ from ..config import DeploymentConfig
 
 class Route53Manager(BaseAWSManager):
     """Manages Route53 hosted zones and DNS records"""
-    
+
     def __init__(self, config: DeploymentConfig):
         super().__init__(config)
-        self.client = boto3.client('route53')
+        self.client = self.get_client('route53')
         self.domain = config.domain
         self.www_domain = f"www.{config.domain}"
         self.is_subdomain = config.is_subdomain
