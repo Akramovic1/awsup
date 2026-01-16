@@ -52,7 +52,7 @@ class ProductionDeployer:
         return self.deployer.show_detailed_status()
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.option('--config', '-c', help='Configuration file path')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 @click.option('--profile', '-p', help='AWS profile to use')
@@ -65,6 +65,11 @@ def cli(ctx, config, verbose, profile):
     ctx.ensure_object(dict)
     ctx.obj['config_path'] = config
     ctx.obj['aws_profile'] = profile
+
+    # Launch interactive mode if no command provided
+    if ctx.invoked_subcommand is None:
+        from .utils.interactive import launch_interactive
+        launch_interactive(ctx)
 
 
 @cli.command()

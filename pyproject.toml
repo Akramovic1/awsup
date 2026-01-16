@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "awsup"
-version = "2.2.0"
+version = "2.3.0"
 description = "🚀 AWSUP - Lightning-fast AWS static website deployment"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -36,7 +36,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "click>=8.1.0",
     "rich>=13.0.0",
-    "jinja2>=3.1.0"
+    "jinja2>=3.1.0",
+    "questionary>=2.0.0"
 ]
 
 [project.optional-dependencies]
