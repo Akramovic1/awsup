@@ -17,6 +17,9 @@ from ..validators import DomainValidator
 
 console = Console()
 
+# Active AWS profile for all operations (None = use default credentials)
+_active_profile: Optional[str] = None
+
 # Custom style for questionary - avoid white/black/yellow for visibility
 custom_style = Style([
     ('qmark', 'fg:cyan bold'),
@@ -31,19 +34,14 @@ custom_style = Style([
 
 BANNER = """
 [bold cyan]
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║                                                               ║
-    ║      █████╗ ██╗    ██╗███████╗██╗   ██╗██████╗               ║
-    ║     ██╔══██╗██║    ██║██╔════╝██║   ██║██╔══██╗              ║
-    ║     ███████║██║ █╗ ██║███████╗██║   ██║██████╔╝              ║
-    ║     ██╔══██║██║███╗██║╚════██║██║   ██║██╔═══╝               ║
-    ║     ██║  ██║╚███╔███╔╝███████║╚██████╔╝██║                   ║
-    ║     ╚═╝  ╚═╝ ╚══╝╚══╝ ╚══════╝ ╚═════╝ ╚═╝                   ║
-    ║                                                               ║
-    ║          [green]Lightning-fast AWS Website Deployment[/green]              ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
+     █████╗ ██╗    ██╗███████╗██╗   ██╗██████╗
+    ██╔══██╗██║    ██║██╔════╝██║   ██║██╔══██╗
+    ███████║██║ █╗ ██║███████╗██║   ██║██████╔╝
+    ██╔══██║██║███╗██║╚════██║██║   ██║██╔═══╝
+    ██║  ██║╚███╔███╔╝███████║╚██████╔╝██║
+    ╚═╝  ╚═╝ ╚══╝╚══╝ ╚══════╝ ╚═════╝ ╚═╝
 [/bold cyan]
+    [green]Lightning-fast AWS Website Deployment[/green]
 """
 
 
@@ -78,6 +76,11 @@ def get_domain_status(domain: str) -> dict:
 
 def main_menu() -> Optional[str]:
     """Display the main menu and return the selected action"""
+    # Show current active profile
+    profile_text = _active_profile or "default"
+    console.print(f"[magenta]Active AWS Profile:[/magenta] [cyan]{profile_text}[/cyan]")
+    console.print()
+
     choices = [
         questionary.Choice('🚀 Deploy Website', value='deploy'),
         questionary.Choice('📊 Check Status', value='status'),
@@ -141,35 +144,10 @@ def deploy_wizard(ctx) -> bool:
     # Normalize domain
     domain = DomainValidator.normalize_domain(domain)
 
-    # Step 2: Select AWS profile
-    profile_manager = AWSProfileManager()
-    profiles = profile_manager.list_profiles()
+    # Use the active profile (set in Manage Profiles menu)
+    aws_profile = _active_profile
 
-    if profiles:
-        profile_choices = [
-            questionary.Choice(f'👤 {p["name"]}' + (' ✅' if p.get('valid') else ' ❌'), value=p['name'])
-            for p in profiles
-        ]
-        profile_choices.insert(0, questionary.Choice('🔧 Use default credentials', value=None))
-
-        # Find default profile to pre-select it
-        default_value = None
-        for p in profiles:
-            if p['name'] == 'default':
-                default_value = 'default'
-                break
-
-        aws_profile = questionary.select(
-            'Select AWS profile:',
-            choices=profile_choices,
-            style=custom_style,
-            default=default_value
-        ).ask()
-    else:
-        aws_profile = None
-        console.print("[magenta]Using default AWS credentials[/magenta]")
-
-    # Step 3: Cache option
+    # Step 2: Cache option
     enable_cache = questionary.confirm(
         'Enable CloudFront caching?',
         default=False,
@@ -282,6 +260,8 @@ def status_menu(ctx):
 
     try:
         config = DeploymentConfig(domain=domain)
+        if _active_profile:
+            config.aws_profile = _active_profile
         deployer = CompleteProductionDeployer(config)
         deployer.show_detailed_status()
     except Exception as e:
@@ -332,6 +312,8 @@ def invalidate_menu(ctx):
 
     try:
         config = DeploymentConfig(domain=domain)
+        if _active_profile:
+            config.aws_profile = _active_profile
         deployer = CompleteProductionDeployer(config)
         deployer.invalidate_cache(paths)
         console.print("[green]✅ Cache invalidation created[/green]")
@@ -351,6 +333,7 @@ def profiles_menu(ctx):
         action = questionary.select(
             'What would you like to do?',
             choices=[
+                questionary.Choice('✅ Select active profile', value='select'),
                 questionary.Choice('📋 List profiles', value='list'),
                 questionary.Choice('➕ Add profile', value='add'),
                 questionary.Choice('➖ Remove profile', value='remove'),
@@ -363,7 +346,9 @@ def profiles_menu(ctx):
         if action == 'back' or action is None:
             break
 
-        if action == 'list':
+        if action == 'select':
+            select_active_profile()
+        elif action == 'list':
             list_profiles()
         elif action == 'add':
             add_profile()
@@ -481,6 +466,50 @@ def remove_profile():
             console.print(f"[red]❌ {message}[/red]")
 
 
+def select_active_profile():
+    """Select which AWS profile to use for all operations"""
+    global _active_profile
+    manager = AWSProfileManager()
+    profiles = manager.list_profiles()
+
+    if not profiles:
+        console.print("[orange3]No profiles found. Add one first.[/orange3]")
+        return
+
+    choices = [questionary.Choice('🔧 Use default credentials', value=None)]
+
+    # Find index of current active profile for default selection
+    default_choice = None
+
+    for p in profiles:
+        label = f"👤 {p['name']}"
+        if p['name'] == _active_profile:
+            label += " [current]"
+            default_choice = p['name']
+        if p.get('valid'):
+            label += " ✅"
+        else:
+            label += " ❌"
+        choices.append(questionary.Choice(label, value=p['name']))
+
+    selected = questionary.select(
+        'Select profile to use:',
+        choices=choices,
+        style=custom_style,
+        default=default_choice
+    ).ask()
+
+    if selected is None and _active_profile is None:
+        console.print("[magenta]Already using default credentials[/magenta]")
+        return
+
+    _active_profile = selected
+    if selected:
+        console.print(f"[green]✅ Active profile set to: {selected}[/green]")
+    else:
+        console.print("[green]✅ Using default AWS credentials[/green]")
+
+
 def cleanup_menu(ctx):
     """Interactive cleanup"""
     console.print(Panel.fit(
@@ -535,6 +564,8 @@ def cleanup_menu(ctx):
 
     try:
         config = DeploymentConfig(domain=domain)
+        if _active_profile:
+            config.aws_profile = _active_profile
         deployer = CompleteProductionDeployer(config)
 
         if phase == '1':

@@ -22,8 +22,8 @@ class CompleteProductionDeployer:
         self.state_manager = StateManager(config.domain, config.environment)
         self.state = self.state_manager.load_state()
         
-        # Get AWS account ID
-        self.account_id = AWSCredentialValidator.get_account_id()
+        # Get AWS account ID (use the selected profile, not default)
+        self.account_id = AWSCredentialValidator.get_account_id(config.aws_profile)
         if not self.account_id:
             raise ValueError("Could not determine AWS account ID")
         
