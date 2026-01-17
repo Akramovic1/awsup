@@ -17,10 +17,10 @@ from ..validators import DomainValidator
 
 console = Console()
 
-# Custom style for questionary - avoid white/black for visibility
+# Custom style for questionary - avoid white/black/yellow for visibility
 custom_style = Style([
     ('qmark', 'fg:cyan bold'),
-    ('question', 'fg:yellow bold'),
+    ('question', 'fg:#00aa00 bold'),  # Dark green - visible on light/dark backgrounds
     ('answer', 'fg:green bold'),
     ('pointer', 'fg:cyan bold'),
     ('highlighted', 'fg:cyan bold'),
@@ -40,7 +40,7 @@ BANNER = """
     ║     ██║  ██║╚███╔███╔╝███████║╚██████╔╝██║                   ║
     ║     ╚═╝  ╚═╝ ╚══╝╚══╝ ╚══════╝ ╚═════╝ ╚═╝                   ║
     ║                                                               ║
-    ║          [yellow]Lightning-fast AWS Website Deployment[/yellow]             ║
+    ║          [green]Lightning-fast AWS Website Deployment[/green]              ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
 [/bold cyan]
@@ -152,14 +152,22 @@ def deploy_wizard(ctx) -> bool:
         ]
         profile_choices.insert(0, questionary.Choice('🔧 Use default credentials', value=None))
 
+        # Find default profile to pre-select it
+        default_value = None
+        for p in profiles:
+            if p['name'] == 'default':
+                default_value = 'default'
+                break
+
         aws_profile = questionary.select(
             'Select AWS profile:',
             choices=profile_choices,
-            style=custom_style
+            style=custom_style,
+            default=default_value
         ).ask()
     else:
         aws_profile = None
-        console.print("[magenta]Using default AWS credentials[/dim]")
+        console.print("[magenta]Using default AWS credentials[/magenta]")
 
     # Step 3: Cache option
     enable_cache = questionary.confirm(
@@ -198,7 +206,7 @@ def deploy_wizard(ctx) -> bool:
     console.print()
 
     if not questionary.confirm('Proceed with deployment?', default=True, style=custom_style).ask():
-        console.print("[yellow]Deployment cancelled[/yellow]")
+        console.print("[orange3]Deployment cancelled[/orange3]")
         return False
 
     # Execute deployment
@@ -235,7 +243,7 @@ def deploy_wizard(ctx) -> bool:
             console.print("[bold green]✅ Deployment complete![/bold green]")
         else:
             console.print()
-            console.print("[yellow]Please configure NS records, then run:[/yellow]")
+            console.print("[orange3]Please configure NS records, then run:[/orange3]")
             console.print(f"[cyan]  awsup phase2 {domain}[/cyan]")
 
         return True
@@ -256,7 +264,7 @@ def status_menu(ctx):
     existing_domains = get_existing_domains()
 
     if not existing_domains:
-        console.print("[yellow]No domain configurations found.[/yellow]")
+        console.print("[orange3]No domain configurations found.[/orange3]")
         console.print("[magenta]Run a deployment first to create a configuration.[/dim]")
         return
 
@@ -291,7 +299,7 @@ def invalidate_menu(ctx):
     existing_domains = get_existing_domains()
 
     if not existing_domains:
-        console.print("[yellow]No domain configurations found.[/yellow]")
+        console.print("[orange3]No domain configurations found.[/orange3]")
         return
 
     domain = questionary.select(
@@ -371,13 +379,13 @@ def list_profiles():
     profiles = manager.list_profiles()
 
     if not profiles:
-        console.print("[yellow]No AWS profiles found[/yellow]")
+        console.print("[orange3]No AWS profiles found[/orange3]")
         console.print("[magenta]Run 'Add profile' to create one[/dim]")
         return
 
     table = Table(title="AWS Profiles", border_style="blue")
     table.add_column("Profile Name", style="cyan")
-    table.add_column("Account ID", style="yellow")
+    table.add_column("Account ID", style="green")
     table.add_column("Status", style="magenta")
 
     for p in profiles:
@@ -443,13 +451,13 @@ def remove_profile():
     profiles = manager.list_profiles()
 
     if not profiles:
-        console.print("[yellow]No profiles to remove[/yellow]")
+        console.print("[orange3]No profiles to remove[/orange3]")
         return
 
     profile_names = [p['name'] for p in profiles if p['name'] != 'default']
 
     if not profile_names:
-        console.print("[yellow]No removable profiles (cannot remove 'default')[/yellow]")
+        console.print("[orange3]No removable profiles (cannot remove 'default')[/orange3]")
         return
 
     name = questionary.select(
@@ -484,7 +492,7 @@ def cleanup_menu(ctx):
     existing_domains = get_existing_domains()
 
     if not existing_domains:
-        console.print("[yellow]No domain configurations found.[/yellow]")
+        console.print("[orange3]No domain configurations found.[/orange3]")
         return
 
     domain = questionary.select(
@@ -519,7 +527,7 @@ def cleanup_menu(ctx):
         default=False,
         style=custom_style
     ).ask():
-        console.print("[yellow]Cleanup cancelled[/yellow]")
+        console.print("[orange3]Cleanup cancelled[/orange3]")
         return
 
     # Execute cleanup
