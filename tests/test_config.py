@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from awsup.config import DeploymentConfig, AWSCredentialValidator, StateManager
+from awsup.config import DeploymentConfig, StateManager
 
 
 class TestDeploymentConfig:
@@ -112,66 +112,99 @@ class TestDeploymentConfig:
 
 class TestAWSCredentialValidator:
     """Test AWS credential validation"""
-    
-    @patch('boto3.client')
-    def test_validate_credentials_success(self, mock_client):
+
+    def _clear_modules_and_cache(self):
+        """Remove awsup modules from sys.modules and clear boto3 cache"""
+        import sys
+        import boto3
+
+        # Clear boto3's default session cache
+        boto3.DEFAULT_SESSION = None
+
+        # Remove cached modules to ensure fresh import
+        modules_to_remove = [k for k in list(sys.modules.keys())
+                           if k.startswith('awsup')]
+        for mod in modules_to_remove:
+            del sys.modules[mod]
+
+    def test_validate_credentials_success(self):
         """Test successful credential validation"""
+        self._clear_modules_and_cache()
+
+        mock_session = MagicMock()
         mock_sts = MagicMock()
         mock_sts.get_caller_identity.return_value = {'Account': '123456789012'}
-        mock_client.return_value = mock_sts
-        
-        result = AWSCredentialValidator.validate_credentials()
-        assert result is True
-    
-    @patch('boto3.client')
-    def test_validate_credentials_failure(self, mock_client):
+        mock_session.client.return_value = mock_sts
+
+        with patch('boto3.Session', return_value=mock_session):
+            from awsup.config import AWSCredentialValidator
+            result = AWSCredentialValidator.validate_credentials()
+            assert result is True
+
+    def test_validate_credentials_failure(self):
         """Test credential validation failure"""
-        mock_client.side_effect = Exception("No credentials")
-        
-        result = AWSCredentialValidator.validate_credentials()
-        assert result is False
-    
-    @patch('boto3.client')
-    def test_get_account_id_success(self, mock_client):
+        self._clear_modules_and_cache()
+
+        mock_session = MagicMock()
+        mock_sts = MagicMock()
+        mock_sts.get_caller_identity.side_effect = Exception("No credentials")
+        mock_session.client.return_value = mock_sts
+
+        with patch('boto3.Session', return_value=mock_session):
+            from awsup.config import AWSCredentialValidator
+            result = AWSCredentialValidator.validate_credentials()
+            assert result is False
+
+    def test_get_account_id_success(self):
         """Test successful account ID retrieval"""
+        self._clear_modules_and_cache()
+
+        mock_session = MagicMock()
         mock_sts = MagicMock()
         mock_sts.get_caller_identity.return_value = {'Account': '123456789012'}
-        mock_client.return_value = mock_sts
-        
-        account_id = AWSCredentialValidator.get_account_id()
-        assert account_id == '123456789012'
-    
-    @patch('boto3.client')
-    def test_get_account_id_failure(self, mock_client):
+        mock_session.client.return_value = mock_sts
+
+        with patch('boto3.Session', return_value=mock_session):
+            from awsup.config import AWSCredentialValidator
+            account_id = AWSCredentialValidator.get_account_id()
+            assert account_id == '123456789012'
+
+    def test_get_account_id_failure(self):
         """Test account ID retrieval failure"""
-        mock_client.side_effect = Exception("No credentials")
-        
-        account_id = AWSCredentialValidator.get_account_id()
-        assert account_id is None
-    
-    @patch('boto3.client')
-    def test_validate_permissions(self, mock_client):
+        self._clear_modules_and_cache()
+
+        mock_session = MagicMock()
+        mock_sts = MagicMock()
+        mock_sts.get_caller_identity.side_effect = Exception("No credentials")
+        mock_session.client.return_value = mock_sts
+
+        with patch('boto3.Session', return_value=mock_session):
+            from awsup.config import AWSCredentialValidator
+            account_id = AWSCredentialValidator.get_account_id()
+            assert account_id is None
+
+    def test_validate_permissions(self):
         """Test permission validation"""
-        # Mock successful clients
+        self._clear_modules_and_cache()
+
         mock_clients = {
             'route53': MagicMock(),
-            's3': MagicMock(), 
+            's3': MagicMock(),
             'cloudfront': MagicMock(),
             'acm': MagicMock()
         }
-        
-        def client_factory(service, **kwargs):
-            return mock_clients[service]
-        
-        mock_client.side_effect = client_factory
-        
-        config = DeploymentConfig(domain="example.com")
-        permissions = AWSCredentialValidator.validate_permissions(config)
-        
-        assert permissions['route53'] is True
-        assert permissions['s3'] is True
-        assert permissions['cloudfront'] is True
-        assert permissions['acm'] is True
+        mock_session = MagicMock()
+        mock_session.client.side_effect = lambda service, **kw: mock_clients[service]
+
+        with patch('boto3.Session', return_value=mock_session):
+            from awsup.config import AWSCredentialValidator
+            config = DeploymentConfig(domain="example.com")
+            permissions = AWSCredentialValidator.validate_permissions(config)
+
+            assert permissions['route53'] is True
+            assert permissions['s3'] is True
+            assert permissions['cloudfront'] is True
+            assert permissions['acm'] is True
 
 
 class TestStateManager:
