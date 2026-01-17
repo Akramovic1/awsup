@@ -71,6 +71,16 @@ class AWSProfileManager:
         Add a new profile to credentials file.
         Returns (success, message).
         """
+        # Strip whitespace/newlines from all inputs
+        profile_name = profile_name.strip()
+        access_key = access_key.strip()
+        secret_key = secret_key.strip()
+        if region:
+            region = region.strip()
+
+        if not profile_name:
+            return False, "Profile name cannot be empty"
+
         parser = configparser.ConfigParser()
 
         if self.CREDENTIALS_PATH.exists():

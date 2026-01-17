@@ -17,16 +17,16 @@ from ..validators import DomainValidator
 
 console = Console()
 
-# Custom style for questionary
+# Custom style for questionary - avoid white/black for visibility
 custom_style = Style([
     ('qmark', 'fg:cyan bold'),
-    ('question', 'fg:white bold'),
+    ('question', 'fg:yellow bold'),
     ('answer', 'fg:green bold'),
     ('pointer', 'fg:cyan bold'),
     ('highlighted', 'fg:cyan bold'),
     ('selected', 'fg:green'),
-    ('separator', 'fg:gray'),
-    ('instruction', 'fg:gray'),
+    ('separator', 'fg:magenta'),
+    ('instruction', 'fg:magenta'),
 ])
 
 BANNER = """
@@ -40,7 +40,7 @@ BANNER = """
     ║     ██║  ██║╚███╔███╔╝███████║╚██████╔╝██║                   ║
     ║     ╚═╝  ╚═╝ ╚══╝╚══╝ ╚══════╝ ╚═════╝ ╚═╝                   ║
     ║                                                               ║
-    ║          [white]Lightning-fast AWS Website Deployment[/white]             ║
+    ║          [yellow]Lightning-fast AWS Website Deployment[/yellow]             ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
 [/bold cyan]
@@ -159,7 +159,7 @@ def deploy_wizard(ctx) -> bool:
         ).ask()
     else:
         aws_profile = None
-        console.print("[dim]Using default AWS credentials[/dim]")
+        console.print("[magenta]Using default AWS credentials[/dim]")
 
     # Step 3: Cache option
     enable_cache = questionary.confirm(
@@ -257,7 +257,7 @@ def status_menu(ctx):
 
     if not existing_domains:
         console.print("[yellow]No domain configurations found.[/yellow]")
-        console.print("[dim]Run a deployment first to create a configuration.[/dim]")
+        console.print("[magenta]Run a deployment first to create a configuration.[/dim]")
         return
 
     domain = questionary.select(
@@ -372,13 +372,13 @@ def list_profiles():
 
     if not profiles:
         console.print("[yellow]No AWS profiles found[/yellow]")
-        console.print("[dim]Run 'Add profile' to create one[/dim]")
+        console.print("[magenta]Run 'Add profile' to create one[/dim]")
         return
 
     table = Table(title="AWS Profiles", border_style="blue")
     table.add_column("Profile Name", style="cyan")
-    table.add_column("Account ID", style="white")
-    table.add_column("Status", style="white")
+    table.add_column("Account ID", style="yellow")
+    table.add_column("Status", style="magenta")
 
     for p in profiles:
         status = "[green]Valid[/green]" if p.get('valid') else "[red]Invalid[/red]"
